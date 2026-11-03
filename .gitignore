@@ -7,3 +7,7 @@ results/frames/
 __pycache__/
 *.pyc
 *:Zone.Identifier
+
+.venv/
+__pycache__/
+cases/
