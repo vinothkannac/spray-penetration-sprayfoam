@@ -1,0 +1,9 @@
+.venv/
+cases/*/
+!cases/.gitkeep
+tests/synthetic/
+tests/synthetic_results/
+results/frames/
+__pycache__/
+*.pyc
+*:Zone.Identifier

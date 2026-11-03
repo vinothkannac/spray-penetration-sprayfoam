@@ -1,0 +1,74 @@
+{
+  "mode": "cold",
+  "primary_metric": "S99",
+  "eval_window_ms": [
+    0.2,
+    1.0
+  ],
+  "rho_air_kg_m3": 59.45939517903224,
+  "break_up_time_us": 85.24825706567302,
+  "naber_siebers_full_angle_deg": 18.264255819390396,
+  "injection": {
+    "u_peak_m_s": 389.21253824664205,
+    "u_mean_0_to_end_m_s": 305.26735479846354
+  },
+  "validation": [
+    {
+      "mesh": "coarse",
+      "cells": 78848,
+      "mean_S99_mm": 18.407,
+      "MAPE_vs_corr_pct": 31.131,
+      "bias_vs_corr_pct": -31.131,
+      "err_at_last_time_pct": -20.864,
+      "t_last_ms": 1.0,
+      "theta_parcel_deg_mean": 25.995,
+      "n_parcels_last": 10420
+    },
+    {
+      "mesh": "medium",
+      "cells": 168100,
+      "mean_S99_mm": 24.08,
+      "MAPE_vs_corr_pct": 9.647,
+      "bias_vs_corr_pct": -9.642,
+      "err_at_last_time_pct": 0.044,
+      "t_last_ms": 1.0,
+      "theta_parcel_deg_mean": 20.352,
+      "n_parcels_last": 10134
+    },
+    {
+      "mesh": "fine",
+      "cells": 365170,
+      "mean_S99_mm": 25.326,
+      "MAPE_vs_corr_pct": 6.101,
+      "bias_vs_corr_pct": -4.586,
+      "err_at_last_time_pct": 3.18,
+      "t_last_ms": 1.0,
+      "theta_parcel_deg_mean": 18.976,
+      "n_parcels_last": 10040
+    }
+  ],
+  "gci": {
+    "r21": 1.2951173637038036,
+    "r32": 1.2870408869670464,
+    "eps21": -0.0012459705882352998,
+    "eps32": -0.005672958823529407,
+    "spread_pct": 27.319554225651597,
+    "monotone": true,
+    "order": 6.047479599667008,
+    "gci_fine_pct": 1.6280403826066534,
+    "f_extrapolated": 0.025655776539273294,
+    "gci_fine_pct_formal": 9.079310135776891,
+    "order_plausible": false
+  },
+  "images": {
+    "mesh_level": "medium",
+    "n_frames": 20,
+    "pixel_size_um": 100.0,
+    "image_vs_parcel_mean_abs_pct": 2.8639242008894694,
+    "image_vs_parcel_bias_pct": 2.8639242008894694,
+    "image_vs_Smax_mean_pct": 1.9777971528534781,
+    "image_vs_corr_mean_abs_pct": 7.787468908048931,
+    "theta_image_deg_mean": 21.16556354098175,
+    "theta_parcel_deg_mean": 20.351543776558085
+  }
+}

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Reproduce the study: create cases, mesh, run sprayFoam for all mesh levels, analyse.
+# Needs a sourced OpenFOAM (ESI v2306+ recommended) and Python 3 with analysis/requirements.txt.
+#   NPROCS=4 ./Allrun        # optional parallel run (see note below)
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${WM_PROJECT_DIR:?Source your OpenFOAM environment first}"
+NPROCS="${NPROCS:-1}"
+
+python3 scripts/make_cases.py
+
+for level in coarse medium fine; do
+    echo "=== $level ==="
+    pushd "cases/$level" > /dev/null
+    blockMesh > log.blockMesh 2>&1
+    checkMesh > log.checkMesh 2>&1 || true
+    if [ "$NPROCS" -gt 1 ]; then
+        # Parallel path: verify that decomposeParDict exists in the tutorial, then
+        # check that reconstructPar actually reconstructs the lagrangian cloud on your version.
+        foamDictionary -entry numberOfSubdomains -set "$NPROCS" system/decomposeParDict > /dev/null
+        decomposePar -force > log.decomposePar 2>&1
+        mpirun -np "$NPROCS" sprayFoam -parallel > log.sprayFoam 2>&1
+        reconstructPar -newTimes > log.reconstructPar 2>&1
+    else
+        sprayFoam > log.sprayFoam 2>&1
+    fi
+    popd > /dev/null
+done
+
+python3 analysis/run_analysis.py --params params.json --cases cases --out results
+echo "Done. See results/ (summary.json, validation_table.md, *.png)."
