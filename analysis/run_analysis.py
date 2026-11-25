@@ -129,7 +129,7 @@ def main() -> None:
         d_img_vs_parcel = pct_err(idf.loc[ok, "S_image"].values, idf.loc[ok, prim].values)
         d_img_vs_corr = pct_err(idf.loc[ok, "S_image"].values, idf.loc[ok, "S_corr"].values)
         img_summary = {
-            "mesh_level": lv, "n_frames": len(images), "pixel_size_um": 1e6 * params["images"]["pixel_size_m"],
+            "mesh_level": lv, "n_frames": len(images), "n_frames_eval": int(ok.sum()), "pixel_size_um": 1e6 * params["images"]["pixel_size_m"],
             "image_vs_parcel_mean_abs_pct": float(np.mean(np.abs(d_img_vs_parcel))),
             "image_vs_parcel_bias_pct": float(np.mean(d_img_vs_parcel)),
             "image_vs_Smax_mean_pct": float(np.mean(pct_err(idf.loc[ok, "S_image"].values, idf.loc[ok, "S_max"].values))),
@@ -138,7 +138,7 @@ def main() -> None:
             "theta_parcel_deg_mean": float(idf.loc[ok, "theta_parcel_deg"].mean()),
         }
 
-    theta_ns = corr.naber_siebers_half_angle_deg(rho_a, inj["liquid_density_kg_m3"], met["naber_siebers_c"])
+    theta_ns = corr.naber_siebers_full_angle_deg(rho_a, inj["liquid_density_kg_m3"], met["naber_siebers_c"])
 
     # ---- figures
     inj_tbl = cloudio.read_injection(Path(a.cases) / levels[1])
@@ -185,7 +185,7 @@ def _write_markdown(table, g, img, summary, out: Path, prim: str) -> None:
         lines.append(f"Grid convergence: NOT monotone; spread between the three meshes = {g['spread_pct']:.1f} % "
                      "(no order or GCI computed; typical for Lagrangian spray models).")
     if img:
-        lines.append(f"Image pipeline ({img['mesh_level']} mesh, {img['n_frames']} frames, "
+        lines.append(f"Image pipeline ({img['mesh_level']} mesh, {img['n_frames_eval']} of {img['n_frames']} frames in the window, "
                      f"{img['pixel_size_um']:.0f} um/px): penetration differs from the parcel-based {prim} by "
                      f"{img['image_vs_parcel_mean_abs_pct']:.1f} % on average (bias {img['image_vs_parcel_bias_pct']:+.1f} %).")
     lines.append(f"Hiroyasu-Arai break-up time: {summary['break_up_time_us']:.1f} us; "

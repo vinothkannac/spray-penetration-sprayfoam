@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Remove generated cases and results (keeps params.json and all scripts).
+# Remove generated cases, synthetic test data and rendered frames.
+# The committed files in results/ are kept; run_analysis.py overwrites them on the next run.
 cd "$(dirname "$0")"
-rm -rf cases/coarse cases/medium cases/fine tests/synthetic tests/synthetic_results
-find results -type f ! -name .gitkeep -delete
-find results -mindepth 1 -type d -empty -delete
+rm -rf cases/coarse cases/medium cases/fine tests/synthetic tests/synthetic_results results/frames
 find . -name __pycache__ -not -path './.venv/*' -type d -prune -exec rm -rf {} +
 echo "cleaned"

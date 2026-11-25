@@ -48,8 +48,8 @@ def break_up_time(d0: float, u0: float, rho_l: float, rho_a: float, cv: float = 
     return float(29.0 * rho_l * d0 / np.sqrt(rho_a * dp))
 
 
-def naber_siebers_half_angle_deg(rho_a: float, rho_l: float, c: float = 0.26) -> float:
-    """Full spray angle (despite the function name) from the Naber-Siebers relation
+def naber_siebers_full_angle_deg(rho_a: float, rho_l: float, c: float = 0.26) -> float:
+    """Full spray angle from the Naber-Siebers relation
     tan(theta/2) = c * [(rho_a/rho_l)^0.19 - 0.0043*sqrt(rho_l/rho_a)].
 
     The constant c is nozzle dependent (0.26 is the value I took for a diesel nozzle). I only use

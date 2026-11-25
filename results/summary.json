@@ -63,6 +63,7 @@
   "images": {
     "mesh_level": "medium",
     "n_frames": 20,
+    "n_frames_eval": 17,
     "pixel_size_um": 100.0,
     "image_vs_parcel_mean_abs_pct": 2.8639242008894694,
     "image_vs_parcel_bias_pct": 2.8639242008894694,

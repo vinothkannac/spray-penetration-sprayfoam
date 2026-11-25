@@ -36,7 +36,8 @@ All numbers are from my run (`results/summary.json`, `results/validation_table.m
   **Grid convergence index: 9.1 % at the fine mesh** if I assume the formal second order. The script's observed
   order is p = 6.0, which gives a GCI of only 1.6 %, but I do not trust that value (see
   [Mesh convergence](#mesh-convergence)).
-- The image pipeline recovers the parcel-based penetration to 2.9 % on average over 20 frames.
+- The image pipeline recovers the parcel-based penetration to 2.9 % on average over the 17 frames in the window
+  (3.7 % over all 20 rendered frames).
 - Spray angle from the images is 21.2°, from the parcels 20.4° (see [Imaging pipeline](#imaging-pipeline)).
 
 ## 1. The test case: the Aachen bomb
@@ -165,7 +166,7 @@ dashed: detected tip with its position.*
 *Figure 8. (a) Image-based penetration against the parcel-based S99 (the diagonal is a perfect match, the band
 ±5 %). (b) Spray angle over time from parcels and from images, with the Naber–Siebers estimate.*
 
-| Quantity (medium mesh, 20 frames, 100 µm/pixel) | Result |
+| Quantity (medium mesh, 17 frames in 0.2–1.0 ms of 20 rendered, 100 µm/pixel) | Result |
 |---|---|
 | Image penetration vs. parcel S99 | +2.9 % on average (image is longer) |
 | Image penetration vs. parcel S_max | +2.0 % on average |
@@ -209,7 +210,7 @@ pip install -r requirements.txt
 python3 scripts/make_cases.py    # copies and patches the tutorial into cases/{coarse,medium,fine}
 # check injector values in params.json against the printed lines of constant/sprayCloudProperties
 ./Allrun                         # mesh + sprayFoam for all levels + analysis (about 2.5 h serial)
-./Allclean                       # reset
+./Allclean                       # remove cases, test data and frames (keeps committed results)
 ```
 
 Analysis only (after a run): `python3 analysis/run_analysis.py` (5 s, rewrites `results/`).
@@ -219,7 +220,7 @@ The analysis refuses to run while `nozzle_diameter_m`, `injection_velocity_m_s` 
 Tests (no OpenFOAM needed; they use synthetic parcels, whose numbers must never be quoted):
 
 ```bash
-python3 tests/make_synthetic_cases.py && python3 tests/test_pipeline.py
+python3 tests/make_synthetic_cases.py && python3 -m pytest tests
 ```
 
 They check the Hiroyasu–Arai continuity at break-up, the GCI against the worked example of Celik et al. (2008),
@@ -231,7 +232,7 @@ the mass percentile, the geometry, the parcel reader and the rejection of baryce
 README.md
 params.json                    all settings (mode, meshes, injector, metrics, image settings)
 requirements.txt
-Allrun / Allclean              run everything / reset
+Allrun / Allclean              run everything / remove generated data
 scripts/make_cases.py          copies and patches the tutorial into cases/{coarse,medium,fine}
 analysis/
   cloudio.py                   reader for ASCII parcel files and the injector table

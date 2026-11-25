@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Reproduce the study: create cases, mesh, run sprayFoam for all mesh levels, analyse.
-# Needs a sourced OpenFOAM (ESI v2306+ recommended) and Python 3 with analysis/requirements.txt.
+# Needs a sourced OpenFOAM (ESI v2306+ recommended) and Python 3 with requirements.txt.
 #   NPROCS=4 ./Allrun        # optional parallel run (see note below)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -29,4 +29,4 @@ for level in coarse medium fine; do
 done
 
 python3 analysis/run_analysis.py --params params.json --cases cases --out results
-echo "Done. See results/ (summary.json, validation_table.md, *.png)."
+echo "Done. See results/ (summary.json, validation_table.md, figures/*.png)."
