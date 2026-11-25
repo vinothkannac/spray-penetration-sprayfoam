@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Create the three mesh-level cases from the OpenFOAM sprayFoam aachenBomb tutorial.
+"""Create the coarse, medium and fine cases from the aachenBomb tutorial.
 
-The tutorial is copied (never edited in place) and patched with foamDictionary:
-end time, write interval, ASCII output, and (mode "cold") the initial chamber temperature.
-The number of cells of the first hex block in system/blockMeshDict is scaled per mesh level.
+I copy the tutorial and only edit the copy, so the original stays untouched. I change the
+controlDict settings with foamDictionary. The chamber temperature and the cell counts I
+change by editing the text of the files.
 
-Usage (OpenFOAM environment sourced):
+Run it with the OpenFOAM environment sourced:
     python3 scripts/make_cases.py [--params params.json] [--tutorial PATH]
 """
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -22,51 +20,86 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(cmd: list[str], cwd: Path) -> None:
-    res = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-    if res.returncode != 0:
-        sys.exit(f"Command failed in {cwd}: {' '.join(cmd)}\n{res.stderr or res.stdout}")
+def run_command(command, folder):
+    """Run a command inside a folder and stop the script if it fails."""
+    result = subprocess.run(command, cwd=folder, capture_output=True, text=True)
+    if result.returncode != 0:
+        message = result.stderr or result.stdout
+        sys.exit(f"Command failed in {folder}: {' '.join(command)}\n{message}")
 
 
-def find_tutorial(arg: str | None) -> Path:
-    if arg:
-        p = Path(arg)
+def find_tutorial(user_path):
+    if user_path:
+        tutorial = Path(user_path)
     else:
-        tut = os.environ.get("FOAM_TUTORIALS")
-        if not tut:
+        foam_tutorials = os.environ.get("FOAM_TUTORIALS")
+        if not foam_tutorials:
             sys.exit("FOAM_TUTORIALS is not set. Source your OpenFOAM environment first "
                      "(e.g. `source /usr/lib/openfoam/openfoam2406/etc/bashrc`) or pass --tutorial.")
-        p = Path(tut) / "lagrangian" / "sprayFoam" / "aachenBomb"
-    if not p.is_dir():
-        sys.exit(f"Tutorial directory not found: {p}\n"
+        tutorial = Path(foam_tutorials) / "lagrangian" / "sprayFoam" / "aachenBomb"
+    if not tutorial.is_dir():
+        sys.exit(f"Tutorial directory not found: {tutorial}\n"
                  "Use OpenFOAM (ESI, openfoam.com) v2306 or newer, or pass --tutorial.")
-    return p
+    return tutorial
 
 
-HEX_RE = re.compile(r"(hex\s*\([^)]*\)\s*(?:[A-Za-z_]\w*\s*)?)\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\)")
-
-
-def scale_blockmesh(path: Path, factor: float) -> tuple[int, int, int]:
+def scale_blockmesh(path, factor):
+    """Multiply the number of cells per direction of the first hex block by factor."""
     text = path.read_text()
-    m = HEX_RE.search(text)
-    if not m:
+    # I use a regular expression to find "hex (8 vertices) (nx ny nz)". The part in the first
+    # brackets is kept as it is, and the next three groups are nx, ny and nz. A zone name
+    # between the two brackets is allowed.
+    pattern = r"(hex\s*\([^)]*\)\s*(?:[A-Za-z_]\w*\s*)?)\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\)"
+    match = re.search(pattern, text)
+    if not match:
         sys.exit(f"Could not find a 'hex (...) (nx ny nz)' entry in {path}.\n"
                  "The tutorial mesh definition differs from what this script expects; "
                  "scale the cell counts by hand and write mesh_info.json yourself.")
-    nx, ny, nz = (max(4, round(int(g) * factor)) for g in m.groups()[1:])
-    new = f"{m.group(1)}({nx} {ny} {nz})"
-    path.write_text(text[: m.start()] + new + text[m.end():])
+
+    # I keep at least 4 cells in each direction
+    nx = max(4, round(int(match.group(2)) * factor))
+    ny = max(4, round(int(match.group(3)) * factor))
+    nz = max(4, round(int(match.group(4)) * factor))
+
+    new_block = f"{match.group(1)}({nx} {ny} {nz})"
+    path.write_text(text[:match.start()] + new_block + text[match.end():])
     return nx, ny, nz
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--params", default=str(ROOT / "params.json"))
-    ap.add_argument("--tutorial", default=None)
-    args = ap.parse_args()
+def set_control_dict(case, entry, value):
+    run_command(["foamDictionary", "-entry", entry, "-set", value, "system/controlDict"], case)
+
+
+def set_chamber_temperature(case, temperature):
+    t_file = case / "0" / "T"
+    text = t_file.read_text()
+    if "uniform 800" not in text:
+        sys.exit("Expected 'uniform 800' in 0/T of the tutorial; "
+                 "set the chamber temperature by hand in this case.")
+    t_file.write_text(text.replace("uniform 800", f"uniform {temperature:g}"))
+
+
+def print_injector_lines(cases_dir):
+    """Print the injector settings so that I can copy them into params.json."""
+    print("\nNext: copy these values from cases/medium/constant/sprayCloudProperties into params.json")
+    print("      (nozzle_diameter_m, injection_velocity_m_s, liquid_density_kg_m3, origin_m, direction):\n")
+    keywords = ("Umag|outerDiameter|innerDiameter|position|direction|duration|massTotal|"
+                "parcelsPerSecond|thetaOuter|thetaInner|SOI|rho0?|liquids|flowRateProfile")
+    for file in (cases_dir / "medium" / "constant").glob("*CloudProperties"):
+        print(f"--- {file.relative_to(ROOT)}")
+        for number, line in enumerate(file.read_text().splitlines(), 1):
+            if re.search(keywords, line):
+                print(f"{number:5d}: {line.rstrip()}")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--params", default=str(ROOT / "params.json"))
+    parser.add_argument("--tutorial", default=None)
+    args = parser.parse_args()
 
     params = json.loads(Path(args.params).read_text())
-    tut = find_tutorial(args.tutorial)
+    tutorial = find_tutorial(args.tutorial)
     cases_dir = ROOT / "cases"
     cases_dir.mkdir(exist_ok=True)
 
@@ -74,42 +107,32 @@ def main() -> None:
         case = cases_dir / level
         if case.exists():
             shutil.rmtree(case)
-        shutil.copytree(tut, case)
-        for stale in ("Allrun", "Allclean"):  # tutorial scripts would overwrite our settings
-            (case / stale).unlink(missing_ok=True)
-        # Newer ESI releases ship the initial fields as 0.orig (the tutorial Allrun restores it).
+        shutil.copytree(tutorial, case)
+
+        # I delete the tutorial's own run scripts because they would overwrite my settings
+        for script in ("Allrun", "Allclean"):
+            (case / script).unlink(missing_ok=True)
+
+        # Newer ESI releases ship the initial fields as 0.orig, so I copy them to 0
         if not (case / "0").is_dir() and (case / "0.orig").is_dir():
             shutil.copytree(case / "0.orig", case / "0")
 
-        cd = "system/controlDict"
-        run(["foamDictionary", "-entry", "endTime", "-set", str(params["end_time_s"]), cd], case)
-        run(["foamDictionary", "-entry", "writeControl", "-set", "adjustableRunTime", cd], case)
-        run(["foamDictionary", "-entry", "writeInterval", "-set", str(params["write_interval_s"]), cd], case)
-        run(["foamDictionary", "-entry", "writeFormat", "-set", "ascii", cd], case)
+        set_control_dict(case, "endTime", str(params["end_time_s"]))
+        set_control_dict(case, "writeControl", "adjustableRunTime")
+        set_control_dict(case, "writeInterval", str(params["write_interval_s"]))
+        # ASCII output, because my parcel reader only reads text files
+        set_control_dict(case, "writeFormat", "ascii")
 
         if params["mode"] == "cold":
-            t_file = case / "0" / "T"
-            text = t_file.read_text()
-            if "uniform 800" not in text:
-                sys.exit("Expected 'uniform 800' in 0/T of the tutorial; "
-                         "set the chamber temperature by hand in this case.")
-            t_file.write_text(text.replace("uniform 800", f"uniform {params['cold_temperature_K']:g}"))
+            set_chamber_temperature(case, params["cold_temperature_K"])
 
         nx, ny, nz = scale_blockmesh(case / "system" / "blockMeshDict", factor)
-        info = {"level": level, "scale": factor, "cells_per_direction": [nx, ny, nz], "n_cells": nx * ny * nz}
+        n_cells = nx * ny * nz
+        info = {"level": level, "scale": factor, "cells_per_direction": [nx, ny, nz], "n_cells": n_cells}
         (case / "mesh_info.json").write_text(json.dumps(info, indent=2))
-        print(f"{level:7s}: scale {factor:4.2f} -> {nx} x {ny} x {nz} = {nx * ny * nz:,} cells")
+        print(f"{level:7s}: scale {factor:4.2f} -> {nx} x {ny} x {nz} = {n_cells:,} cells")
 
-    print("\nNext: copy these values from cases/medium/constant/sprayCloudProperties into params.json")
-    print("      (nozzle_diameter_m, injection_velocity_m_s, liquid_density_kg_m3, origin_m, direction):\n")
-    props = list((cases_dir / "medium" / "constant").glob("*CloudProperties"))
-    pat = re.compile(r"(Umag|outerDiameter|innerDiameter|position|direction|duration|massTotal|"
-                     r"parcelsPerSecond|thetaOuter|thetaInner|SOI|rho0?|liquids|flowRateProfile)")
-    for f in props:
-        print(f"--- {f.relative_to(ROOT)}")
-        for i, line in enumerate(f.read_text().splitlines(), 1):
-            if pat.search(line):
-                print(f"{i:5d}: {line.rstrip()}")
+    print_injector_lines(cases_dir)
 
 
 if __name__ == "__main__":
