@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Unit and integration tests. Run:  python3 tests/make_synthetic_cases.py && python3 tests/test_pipeline.py"""
+"""Unit and integration tests. Run:  python3 tests/make_synthetic_cases.py && python3 -m pytest tests"""
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -57,13 +58,14 @@ def test_reader_and_known_penetration():
     assert err.max() < 0.03, err.max()   # synthetic data: tip = correlation, S99 ~0.7 % below tip
 
 
-def test_reader_rejects_barycentric(tmp_path=Path("/tmp")):
-    p = tmp_path / "positions_bary"
-    p.write_text("FoamFile\n{\n version 2.0;\n}\n1\n(\n(0.25 0.25 0.25 0.25) 3 1 2\n)\n")
-    try:
-        cloudio.read_positions(p)
-    except ValueError:
-        return
+def test_reader_rejects_barycentric():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "positions_bary"
+        p.write_text("FoamFile\n{\n version 2.0;\n}\n1\n(\n(0.25 0.25 0.25 0.25) 3 1 2\n)\n")
+        try:
+            cloudio.read_positions(p)
+        except ValueError:
+            return
     raise AssertionError("barycentric file should be rejected")
 
 
