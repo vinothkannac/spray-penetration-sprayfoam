@@ -13,9 +13,6 @@ meshes, against the Hiroyasu–Arai correlation (dashed). Pink crosses: the same
 pipeline on frames rendered from the medium-mesh parcels. Panel (b) shows the deviation from the correlation; the
 grey band is the evaluation window (0.2–1.0 ms).*
 
-> **AI assistance.** This project was built with the help of an AI assistant (Claude Code). I ran the simulations
-> myself on my own machine; the code, figures and text were produced and revised together with the assistant.
-
 > **What this is not.** The reference is an *empirical correlation*, not measured data. The result is therefore
 > "agreement with an empirical trend", **not experimental validation**. The image frames are *rendered from
 > simulation parcels*, so they test the image pipeline, not an optical diagnostic.
@@ -184,6 +181,65 @@ noisy.
 python3 analysis/image_pipeline.py --images DIR --background bg.png --pixel-size 1e-4
 ```
 
+If it warns about `threshold_inflated`, see [Robustness on drawn frames](#robustness-on-drawn-frames).
+
+### Robustness on drawn frames
+
+`analysis/image_study.py` tests the pipeline on drawn wedges whose length (150 and 350 px) and full angle (20°) are
+set by construction. It needs no OpenFOAM or parcel data:
+
+```bash
+python3 analysis/image_study.py     # rewrites results/image_study/
+```
+
+A "sharp" wedge has uniform opacity; a "fading" wedge loses opacity along its second half, down to 0.05 at the tip.
+Each value below is a mean over both lengths and 10 noise seeds. **These are not spray images, so the errors do not
+describe the accuracy on camera frames.** One setting or defect is varied at a time.
+
+![Length and angle error against four pipeline settings](results/image_study/sensitivity.png)
+
+- **Smoothing** matters for both tips: from 0 to 4 px, the sharp-tip length error goes from 0.0 % to +3.8 % and the
+  fading-tip error from −3.2 % to +1.2 %. The fading-tip angle error grows to −1.3°.
+- **Contrast floor**: from 0.01 to 0.03 the length changes by 0.5 % or less. At 0.12 the fading tip is 4.4 % short.
+- **Opening size** has no visible effect here. The wedges have no thin structures, so this study does not show that
+  the setting is unimportant.
+
+![Length error for eight kinds of image defect](results/image_study/stress.png)
+
+| Defect (default settings) | Effect on length |
+|---|---|
+| Shadow beyond the liquid, opacity 0.03 or 0.06 | about +30 %, angle +8.5° to +9.9°: the shadow is above the 0.02 floor and is measured as spray |
+| Last 20 % of the length at opacity 0.015 | −17 %: the faint tail is below the floor |
+| Illumination gradient not present in the background, 10 %, fading tip | −14 % (see below) |
+| Droplets 2–5 px ahead of the tip | up to +6 % on average when smoothing joins them to the spray |
+| 10 % sensor noise, fading tip | −3.5 % |
+| Blur of 4 px | up to +4.3 % |
+| Uniform flicker up to 10 % | no visible change: the median subtraction removes it |
+
+**A weakness of the noise estimate.** By default, σ is computed from the median absolute deviation of the *whole frame*,
+so an uncorrected illumination gradient counts as noise. In one 350 px fading-tip frame with a 10 % gradient, the
+threshold rose from 0.020 to 0.237 and the length was 14 % short. The pipeline now reports `threshold_inflated` when the
+threshold is more than 1.5 times what the pixel-to-pixel noise would give (the command-line tool prints a warning). A
+large spray can set this flag too, and the flag does not change any result.
+
+**Optional correction (experimental, off by default).** `--correct-background`, or
+`segment(..., correct_background=True)`, takes the noise from pixel-to-pixel differences and subtracts a fitted plane.
+Both are needed: with the lower threshold alone, some gradients are segmented as spray. If the remaining background is
+clearly negative somewhere, the frame falls back to the default method (`background_corrected = False`).
+`results/image_study/lighting.csv` compares the two methods (fading tip, mean absolute errors):
+
+| Illumination change missing from the background | Default | With correction |
+|---|---|---|
+| Linear gradient, 10 % (three directions) | length 11.6–14.1 % | length 0.5 % |
+| Parabolic ("bowl"), 3–10 % | length 1.2–11.1 % | same as default (falls back) |
+| Local dark patch, 5 % | length 0.1 %, angle 0.5° | length 7.9 %, angle 1.3° |
+| Flat-centred bowl, 3 % and 5 % | angle 0.8–1.0° | **angle 53–91°, not flagged** |
+
+The last row is why the correction is not the default: the default's error in these tests is moderate, while the
+corrected method can be badly wrong with no warning. The fall-back check is a heuristic that I adjusted on drawn frames.
+Use the correction only if the uneven illumination is close to a linear gradient, and inspect the masks. All other
+results in this README use the default method.
+
 ## 5. Limitations (read before quoting results)
 
 - **Not experimental validation.** The reference is an empirical correlation fitted to diesel sprays at much higher
@@ -224,7 +280,8 @@ python3 tests/make_synthetic_cases.py && python3 -m pytest tests
 ```
 
 They check the Hiroyasu–Arai continuity at break-up, the GCI against the worked example of Celik et al. (2008),
-the mass percentile, the geometry, the parcel reader and the rejection of barycentric files.
+the mass percentile, the geometry, the parcel reader and the rejection of barycentric files. The image pipeline is tested
+separately on drawn wedges with a known length and angle (`tests/test_image_pipeline.py`).
 
 ## 7. Repository layout
 
@@ -240,7 +297,8 @@ analysis/
   correlations.py              Hiroyasu–Arai, Naber–Siebers, GCI
   render_images.py             parcels → synthetic back-lit frames
   image_pipeline.py            image processing (also a command-line tool for real frames)
-  plotting.py                  all figures
+  image_study.py               sensitivity and stress study of the image pipeline on drawn frames
+  plotting.py                  figures of the spray study
   run_analysis.py              orchestrates the analysis, writes results/
 tests/                         unit tests and a synthetic-data generator
 results/                       summary.json, tables, per-mesh metrics, figures/ (frames/ is not versioned)
