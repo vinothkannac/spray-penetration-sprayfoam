@@ -1,104 +1,113 @@
-"""Penetration length and spray angle computed directly from Lagrangian parcel data.
+"""Penetration length and spray angle, calculated from the parcel data.
 
-Design notes
-- Penetration metric. I define the penetration as S99: the axial distance that contains 99 % of
-  the liquid mass. Parcel mass is proportional to nParticle * d^3. I chose a mass percentile
-  because the absolute furthest parcel (S_max) is set by a single fast droplet and is noisy
-  and mesh dependent, and a percentile is also close to how experiments define the liquid
-  boundary (a threshold on the integrated extinction signal). S95 and S_max are written as well
-  so that you can see how much the choice matters.
-  Alternatives: a threshold on the projected mass per cell (closer to a real optical
-  criterion), the Siebers 95 %-of-liquid-mass criterion (use percentile 95 in params.json), or
-  the position of a liquid volume fraction iso-surface of 0.001 % on the Eulerian grid.
-- Spray angle. I fit a straight line to the 95th percentile of the radial parcel position as a
-  function of axial distance between 20 % and 80 % of the penetration. This avoids the
-  nozzle region (the injector cone, not the spray, dominates there) and the tip (the head
-  vortex widens it). The full angle is 2*atan(slope).
-  Alternatives: the Naber-Siebers definition (angle of the cone that encloses the spray over
-  the first 60 % of the penetration), or a mass-weighted standard deviation of r(s).
+Why I measure them this way
+- Penetration: I use S99, the axial distance from the nozzle that holds 99 % of the liquid
+  mass. The mass of a parcel is proportional to nParticle * d^3. I did not use the furthest
+  parcel (S_max) because it is set by one fast droplet, so it is noisy and depends on the
+  mesh. A percentile is also closer to experiments, which use a threshold to find the edge of
+  the liquid. I also save S95 and S_max to show how much this choice matters.
+  Other options are a threshold on the projected mass, or a very small value of the liquid
+  volume fraction on the mesh.
+- Spray angle: in each axial bin I take the 95th percentile of the radial position, fit a
+  straight line from 20 % to 80 % of the penetration, and use angle = 2*atan(slope). I leave
+  out the part near the nozzle, where the injector cone dominates, and the tip, where the
+  head vortex makes the spray wider.
+  Another option is the Naber-Siebers cone over the first 60 % of the penetration.
 """
-from __future__ import annotations
-
 import numpy as np
 import pandas as pd
 
 
-def unit(v) -> np.ndarray:
-    v = np.asarray(v, dtype=float)
-    return v / np.linalg.norm(v)
+def unit(vector):
+    vector = np.asarray(vector, dtype=float)
+    return vector / np.linalg.norm(vector)
 
 
-def axial_radial(pos: np.ndarray, origin, direction) -> tuple[np.ndarray, np.ndarray]:
-    """Axial distance s along the spray axis and radial distance r from it, in m.
+def axial_radial(pos, origin, direction):
+    """Distance s along the spray axis and distance r away from the axis, in m.
 
-    I use the injector axis from params.json (not the global y axis) so that the same code works
-    for a tilted injector.
+    I use the injector axis from params.json and not simply the y axis, so that the code also
+    works for a tilted injector.
     """
-    d = unit(direction)
-    rel = pos - np.asarray(origin, dtype=float)
-    s = rel @ d
-    perp = rel - np.outer(s, d)
-    return s, np.linalg.norm(perp, axis=1)
+    axis = unit(direction)
+    relative = pos - np.asarray(origin, dtype=float)
+    s = relative @ axis
+    sideways = relative - np.outer(s, axis)
+    r = np.linalg.norm(sideways, axis=1)
+    return s, r
 
 
-def liquid_mass_weight(d: np.ndarray, n_particle: np.ndarray) -> np.ndarray:
-    """Parcel liquid mass up to a constant: nParticle * d^3.
+def liquid_mass_weight(d, n_particle):
+    """Liquid mass of each parcel, without the constant factors: nParticle * d^3.
 
-    Falls back to nParticle if no diameter was written (then every droplet counts equally, which
-    is a worse approximation of mass, so I would rather make sure d is written).
+    If no diameter was written, I use nParticle only. Then every droplet counts the same,
+    which is a poor estimate of the mass, so it is better to have d in the output.
     """
     if np.all(np.isnan(d)):
         return n_particle.astype(float)
     return n_particle * d ** 3
 
 
-def mass_percentile_axial(s: np.ndarray, w: np.ndarray, q: float) -> float:
-    """Axial distance within which q % of the liquid mass is found."""
+def mass_percentile_axial(s, weight, percent):
+    """Axial distance that contains the given percentage of the liquid mass."""
     if len(s) == 0:
         return float("nan")
-    order = np.argsort(s)
-    cum = np.cumsum(w[order])
-    return float(s[order][np.searchsorted(cum, q / 100.0 * cum[-1])])
+    order = np.argsort(s)                      # parcels from the nozzle to the tip
+    cumulative_mass = np.cumsum(weight[order])
+    target_mass = percent / 100.0 * cumulative_mass[-1]
+    index = np.searchsorted(cumulative_mass, target_mass)
+    return float(s[order][index])
 
 
-def spray_angle_from_parcels(s: np.ndarray, r: np.ndarray, s_tip: float, frac=(0.2, 0.8),
-                             r_percentile: float = 95.0, nbins: int = 12, min_parcels: int = 30) -> float:
-    """Full spray angle in degrees from a linear fit of the radial envelope r_q(s).
+def spray_angle_from_parcels(s, r, s_tip, frac=(0.2, 0.8), r_percentile=95.0, nbins=12,
+                             min_parcels=30):
+    """Full spray angle in degrees.
 
-    I use 12 axial bins because it gives a stable fit with the ~10^4 parcels of the tutorial;
-    with many more parcels, more bins would reduce the noise of the slope further.
+    I use 12 axial bins because this gave a stable fit with the roughly 10^4 parcels of the
+    tutorial. With many more parcels, more bins would be possible.
     """
-    lo, hi = frac[0] * s_tip, frac[1] * s_tip
-    edges = np.linspace(lo, hi, nbins + 1)
-    xs, ys = [], []
-    for a, b in zip(edges[:-1], edges[1:]):
-        sel = (s >= a) & (s < b)
-        if sel.sum() >= max(3, min_parcels // nbins):
-            xs.append(0.5 * (a + b))
-            ys.append(np.percentile(r[sel], r_percentile))
-    if len(xs) < 4:
+    edges = np.linspace(frac[0] * s_tip, frac[1] * s_tip, nbins + 1)
+    # I skip bins with only a few parcels, because their percentile is not reliable
+    min_per_bin = max(3, min_parcels // nbins)
+
+    bin_centres = []
+    bin_radius = []
+    for i in range(nbins):
+        in_bin = (s >= edges[i]) & (s < edges[i + 1])
+        if in_bin.sum() >= min_per_bin:
+            bin_centres.append(0.5 * (edges[i] + edges[i + 1]))
+            bin_radius.append(np.percentile(r[in_bin], r_percentile))
+
+    if len(bin_centres) < 4:
         return float("nan")
-    slope = np.polyfit(xs, ys, 1)[0]
+    slope = np.polyfit(bin_centres, bin_radius, 1)[0]
     return float(np.degrees(2.0 * np.arctan(slope)))
 
 
-def parcel_timeseries(frames: list[dict], origin, direction, params_metrics: dict) -> pd.DataFrame:
-    """S_max, S<q> and the spray angle for every written time."""
+def parcel_timeseries(frames, origin, direction, params_metrics):
+    """Table with S_max, the percentiles and the spray angle for every written time."""
+    percentiles = params_metrics["percentiles"]
+    primary = f"S{params_metrics['primary_percentile']}"
     rows = []
-    qs = params_metrics["percentiles"]
-    for fr in frames:
-        pos = fr["pos"]
-        row = {"t": fr["t"], "n_parcels": len(pos)}
+    for frame in frames:
+        pos = frame["pos"]
+        row = {"t": frame["t"], "n_parcels": len(pos)}
+
         if len(pos) == 0:
-            rows.append({**row, "S_max": np.nan, **{f"S{q}": np.nan for q in qs}, "theta_parcel_deg": np.nan})
+            row["S_max"] = np.nan
+            for q in percentiles:
+                row[f"S{q}"] = np.nan
+            row["theta_parcel_deg"] = np.nan
+            rows.append(row)
             continue
+
         s, r = axial_radial(pos, origin, direction)
-        w = liquid_mass_weight(fr["d"], fr["nParticle"])
+        weight = liquid_mass_weight(frame["d"], frame["nParticle"])
         row["S_max"] = float(s.max())
-        for q in qs:
-            row[f"S{q}"] = mass_percentile_axial(s, w, q)
-        ref = row[f"S{params_metrics['primary_percentile']}"]
+        for q in percentiles:
+            row[f"S{q}"] = mass_percentile_axial(s, weight, q)
         row["theta_parcel_deg"] = spray_angle_from_parcels(
-            s, r, ref, params_metrics["angle_axial_fraction"], params_metrics["angle_radial_percentile"])
+            s, r, row[primary], params_metrics["angle_axial_fraction"],
+            params_metrics["angle_radial_percentile"])
         rows.append(row)
     return pd.DataFrame(rows)
